@@ -1,20 +1,22 @@
 {
   "name": "stocks",
   "version": "1.0.0",
-  "description": "",
+  "description": "Automated Chartink F&O Stock Fetcher by Mahesh Technicals",
+  "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "test": "echo \"No tests specified\" && exit 0"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["chartink", "stocks", "automation", "playwright", "maheshtechnicals"],
+  "author": "Mahesh Technicals",
   "license": "ISC",
   "dependencies": {
     "chalk": "^5.6.2",
     "csv-parse": "^6.1.0",
     "gradient-string": "^3.0.0",
     "node-fetch": "^3.3.2",
-    "playwright": "^1.56.1",
-    "puppeteer": "^24.26.1"
+    "ora": "^8.1.0",
+    "playwright": "^1.56.1"
   }
 }

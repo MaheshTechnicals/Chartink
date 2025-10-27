@@ -7,6 +7,7 @@ import readline from "readline";
 import chalk from "chalk";
 import gradient from "gradient-string";
 import fetch from "node-fetch";
+import ora from "ora";
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -20,16 +21,17 @@ console.log(gradient.pastel.multiline("                🚀 F&O STOCK FETCHER �
 console.log(gradient.pastel.multiline("═══════════════════════════════════════════"));
 console.log(chalk.bold.cyan("                 Author: Mahesh Technicals\n"));
 
-rl.question(chalk.yellow("🔗 Enter Chartink Screener URL: "), async (url) => {
-  rl.close();
-
+async function processChartink(url) {
   if (!url.startsWith("https://chartink.com/screener/")) {
     console.log(chalk.red("❌ Invalid URL! Please use a valid Chartink screener URL."));
     process.exit(1);
   }
 
+  const spinner = ora("Setting up environment...").start();
+
   const downloadPath = path.resolve("./downloads");
-  if (!fs.existsSync(downloadPath)) fs.mkdirSync(downloadPath);
+  fs.rmSync(downloadPath, { recursive: true, force: true });
+  fs.mkdirSync(downloadPath, { recursive: true });
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -39,10 +41,13 @@ rl.question(chalk.yellow("🔗 Enter Chartink Screener URL: "), async (url) => {
   const page = await context.newPage();
 
   try {
+    spinner.text = "Opening Chartink Screener...";
     await page.goto(url, { waitUntil: "networkidle", timeout: 120000 });
+
     const csvButton = page.locator('span.hidden.sm\\:flex', { hasText: "CSV" });
     await csvButton.waitFor({ timeout: 60000 });
 
+    spinner.text = "Downloading CSV data...";
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       csvButton.click(),
@@ -52,17 +57,23 @@ rl.question(chalk.yellow("🔗 Enter Chartink Screener URL: "), async (url) => {
     if (fs.existsSync(csvPath)) fs.unlinkSync(csvPath);
     await download.saveAs(csvPath);
 
+    spinner.text = "Parsing Chartink CSV...";
     const csvData = fs.readFileSync(csvPath, "utf8");
     const records = parse(csvData, { columns: true, skip_empty_lines: true });
     const chartinkSymbols = records.map((r) => r.Symbol?.trim()).filter(Boolean);
     fs.writeFileSync("symbols.txt", chartinkSymbols.join("\n"));
     fs.unlinkSync(csvPath);
 
-    // Fetch NSE file
+    spinner.text = "Fetching latest NSE F&O list...";
     const apiUrl = "https://api.github.com/repos/MaheshTechnicals/FNO-Stocks-list/releases/latest";
     const res = await fetch(apiUrl, { headers: { "User-Agent": "MaheshTechnicals-App" } });
+
+    if (!res.ok) throw new Error(`GitHub API Error: ${res.statusText}`);
+
     const release = await res.json();
-    const nseAsset = release.assets.find((a) => a.name.endsWith(".txt"));
+    const nseAsset = release.assets?.find((a) => a.name.endsWith(".txt"));
+    if (!nseAsset) throw new Error("No NSE .txt file found in the latest release!");
+
     const nseResponse = await fetch(nseAsset.browser_download_url);
     const nseRaw = await nseResponse.text();
 
@@ -73,10 +84,13 @@ rl.question(chalk.yellow("🔗 Enter Chartink Screener URL: "), async (url) => {
     const nsePath = path.join(downloadPath, "nse.txt");
     fs.writeFileSync(nsePath, nseCleaned.join("\n"));
 
+    spinner.text = "Matching Chartink symbols with F&O list...";
     const matched = chartinkSymbols.filter((sym) => nseCleaned.includes(sym));
     fs.writeFileSync("final.txt", matched.join("\n"));
 
-    // 📊 Summary Table
+    spinner.succeed("All tasks completed successfully! 🎯");
+
+    // 📊 Summary
     console.log(chalk.bold.cyan("\n═══════════════════════════════════════════"));
     console.log(chalk.bold.magenta("📊 Summary Report"));
     console.log(chalk.gray("───────────────────────────────────────────"));
@@ -84,13 +98,23 @@ rl.question(chalk.yellow("🔗 Enter Chartink Screener URL: "), async (url) => {
     console.log(chalk.green("📦 NSE.txt      →"), chalk.yellow(nseCleaned.length));
     console.log(chalk.green("📦 Final.txt    →"), chalk.yellow(matched.length));
     console.log(chalk.bold.cyan("═══════════════════════════════════════════"));
-
-    console.log(chalk.bold.magenta("\n🎉 All tasks completed successfully! 🎯"));
-    console.log(gradient.pastel.multiline("═══════════════════════════════════════════"));
+    console.log(chalk.bold.magenta("\n🎉 All files generated successfully!\n"));
   } catch (err) {
-    console.error(chalk.red("\n❌ Error while processing:\n"), err.message);
+    spinner.fail("Error occurred!");
+    console.error(chalk.red("\n❌ " + err.message));
   } finally {
     await browser.close();
     if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true });
   }
-});
+}
+
+const cliUrl = process.argv[2];
+if (cliUrl) {
+  rl.close();
+  processChartink(cliUrl);
+} else {
+  rl.question(chalk.yellow("🔗 Enter Chartink Screener URL: "), async (url) => {
+    rl.close();
+    await processChartink(url);
+  });
+}
